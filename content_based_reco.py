@@ -9,29 +9,44 @@ import os
 import matplotlib.pyplot as plt
 import sklearn.metrics
 import time
-import random
-from sklearn.metrics import precision_score
-'''
-Category:
-A: Attributes, site address
-C: Cases,  each user is assigned an unique case ID.  
-V: Votes/Ratings, each 'C' record followed by one or more V records. each V record contains id of a 'A' record visited. 
 
-['A'] contains list of all the sites
-['C'] contains all the case ids for each user
-['V'] contains the site id voted.
-  
+SIMILARITY_THRESHHOLD = 0.7
+ 
+''' 
+Content-based recommenders exploit solely ratings provided by the active user to build her own profile. In contrast, Content-based recommenders 
+exploit solely ratings provided by the active user to build her own profile.
+
+To construct and update USER PROFILE of an active user, her reactions to items are collected and stored in FEEDBACK/ANNOTATION. 
+PROFILE LEARNER applies learning algorithm to generate a predictive model - user profile -, which will be used by FILTERING COMPONENT.
+given a new item representation, FILTERING COMPONENT predicts whether it will be liked or disliked by by the active user by comparing 
+features in the item representation - item profile - to those in the representation of user preferences -- user profile.  
+
+drawback:
+- Serendipity
+- New User 
+
 '''
 
-def process_user_activity_fast(raw_data):
-    ''' get data into lists, then create DataFrame from lists.
+def process_user_feedback_fast(raw_data):
+    '''
+    Category:
+    A: Attributes, site address
+    C: Cases,  each user is assigned an unique case ID.  
+    V: Votes/Ratings, each 'C' record followed by one or more V records. each V record contains id of a 'A' record visited. 
+    
+    ['A'] contains list of all the sites
+    ['C'] contains all the case ids for each user
+    ['V'] contains the site id voted.
+      
+
+    get data into lists, then create DataFrame from lists.
     Huge performance improvement over creating an empty DataFrame and append row based on  
     .loc operations. 
      
     12s vs 9m
     
     '''    
-    rating =[]    
+    feedback =[]    
     for _, values in raw_data.iterrows():
         
         if values['category'] == 'C':
@@ -39,13 +54,13 @@ def process_user_activity_fast(raw_data):
             continue
         if values['category'] == 'V':
             site_id = values['value']
-            rating.append((user_id, site_id ))
+            feedback.append((user_id, site_id ))
     
-    rating_df = pd.DataFrame(rating, columns=['userid','webid'])
+    feedback_df = pd.DataFrame(feedback, columns=['userid','webid'])
     
-    return rating_df
+    return feedback_df
             
-def prepare_user_activity_slow(user_activity):
+def prepare_user_feedback_slow(user_activity):
     ''' this has serious performance issue
     '''
     
@@ -80,10 +95,17 @@ def prepare_user_activity_slow(user_activity):
     
     return user_activity
 
-def load_data():
+def load_data(train=True):
+    
+    
+    if train == True:
+        filename = 'anonymous-msweb.data'
+    else:
+        filename = 'anonymous-msweb.test'
+    
     dir_name = os.path.dirname(__file__)
 
-    f_path = os.path.join(dir_name, "anonymous-msweb.data")
+    f_path = os.path.join(dir_name, filename)
     try:
         csv_data = pd.read_csv(f_path, header=None, skiprows=7, dtype={3:unicode, 4:unicode})
     except OSError as e:
@@ -103,7 +125,7 @@ def load_data():
     site_count = len(user_activity.loc[user_activity['category'] =="V"].value.unique())
     case_count = len(user_activity.loc[user_activity['category'] =="C"].value.unique())
     
-    print ' user count: {},  site count: {}'.format(case_count, site_count)
+    print ' user count: {},  webid count: {}'.format(case_count, site_count)
     
     #creating item profile
     items = csv_data.loc[csv_data[0] == "A"]
@@ -113,27 +135,28 @@ def load_data():
 
     return user_activity, items
 
-def get_rating_matrix(user_activity):
-    
+def get_rating_matrix(user_feedback):
+    '''learning users's interests based on user likes or dislikes a training document set. 
+    '''
     print ('started processing raw data')
     time_tic = time.clock()
     
-    #user_activity is a pandas DataFrame, column:userid, webid
-    user_activity = process_user_activity_fast(user_activity)
+    #user_feedback is a pandas DataFrame, column:userid, webid
+    user_feedback = process_user_feedback_fast(user_feedback)
     
     time_tok = time.clock()
     
     print 'data processing completed, time taken {}'.format(time_tok - time_tic)
     
-    user_activity_sort = user_activity.sort_values(by='webid', ascending=True)
+    user_activity_sort = user_feedback.sort_values(by='webid', ascending=True)
     
-    user_activity['userid'].unique().shape[0]
-    user_activity['webid'].unique().shape[0]
+    user_feedback['userid'].unique().shape[0]
+    user_feedback['webid'].unique().shape[0]
     
     num_webid = len(user_activity_sort['webid'])
     
     #add a rating column, default value: 1
-    user_activity_sort['rating'] = pd.Series(np.ones((num_webid,)), index=user_activity.index)
+    user_activity_sort['rating'] = pd.Series(np.ones((num_webid,)), index=user_feedback.index)
     
     #create a pivot, index is userid, columns are different webid, value = count the occurrence of [userid, webid], set to 0 if none. 
     rating_matrix = user_activity_sort.pivot(index='userid', columns='webid', values='rating').fillna(0)
@@ -190,33 +213,26 @@ def analyze_model(model, tfidf_matrix):
 
     
     item_profile = tfidf_matrix.toarray()
-    #item_profile: item projected into topic vector space, described by topics
+    #item_profile: items projected into topic/term vector space, described by topics
     
-    #for a given item, list the features with weight > 0. get a random item 
+    #for a given item, list the features with weight > 0. draw 5 random items
+    
+    ''' 
     for r in  np.arange(5):
         item_index = random.randint(0, num_items)
         topic_index = item_profile[item_index] > 0  
         item_topics = list(np.array(term_list)[topic_index])
         print '{}th item , the topic list is{}'.format(item_index, item_topics)
-    
-def split_data(x):
     '''
-    fold = 0
-    for train_idx, test_idx in kf.split(x):
-        fold += 1 
-        train_data = x[train_idx]
-        test_data = x[test_idx]
-        m = model(....)
-        m.fit(train_data)
-        score
-    '''
+
     
 
         
-def content_based_prediction():
+def content_based_prediction(user_activity, items_raw):
+    #return a prediction dataframe, indexed by userid, columns
     
     try:
-        user_activity, items_raw = load_data()
+        user_activity, items_raw = load_data(train=True)
     except:
         print "load data error"
         exit(0)
@@ -232,12 +248,13 @@ def content_based_prediction():
     #items is a subset of items which appear in user_acitity, being rated, then sort 
     items = items_raw[items_raw['webid'].isin(rating.columns.tolist())]
     items = items.sort_values(by='webid', ascending=True)  
-   
-    # create v as  vectorizer, project items to vector space using tfidf based on 'desc', number of features:100
+
+        
+    # create v as a vectorizer, generate item profiles using tfidf based on 'desc', number of features:100
     v = TfidfVectorizer(stop_words ="english",max_features = 100,ngram_range= (0,3),sublinear_tf =True)
     
  
-    #transform items desc to doc-term matrix, fit items into vectorizer, result: each row is a doc/webid, columns are 100 features. value is TF-IDF value
+    #transform items desc to doc-term matrix, fit items into vectorizer, result is item profile: each row is a doc/webid, columns are 100 features. value is TF-IDF value
     tfidf_matrix = v.fit_transform(items['desc'])
     
     analyze_model(v, tfidf_matrix)
@@ -245,38 +262,105 @@ def content_based_prediction():
     
     item_profile = tfidf_matrix.toarray()
     
-    # dot product of rating matrix and item profile to get user_profile, user are projected to the same tfidf feature vector space 
+    # user profile is generated based on their feedbacks on items, and the item profiles. Their favorite items 
+    # dot product of rating matrix and item profile to get user_profile, user are projected to the same tfidf feature vector space  
     user_profile = dot(rating, item_profile) / ( linalg.norm(rating) * linalg.norm(item_profile) )
     
     
     # recommendations based on the similarity between  user profile an item profile
-   
     similarityCalc = sklearn.metrics.pairwise.cosine_similarity(user_profile, item_profile, dense_output=True)
     
-    final_pred= np.where(similarityCalc>0.6, 1, 0)
+    # return elements, if condition is true, return 1 otherwise 0.
+    final_pred= np.where(similarityCalc > SIMILARITY_THRESHHOLD, 1, 0)
+    
+    df_prediction = pd.DataFrame(final_pred, index=rating.index, columns=rating.columns)
 
-    return final_pred,items
+    return df_prediction
 
+def items_not_in_training_data(train_items_raw, test_item):
+    
+    train_set = set(train_items_raw['webid'].unique())
+    test_set = set(test_item['webid'].unique())
+    
+    diff_items = [u for u in test_set if u not in train_set]
+    print ' number of webids in training set:{}, test set:{}'.format(len(train_set), len(test_set))
+    if len(diff_items):
+        print 'different items in training set and test set: {}'.format (diff_items)
+        return diff_items
+    else: 
+        return False
+
+
+def validate_test_training(test, training):
+    scores = []
+    rec_idx = 0 
+    for rec_idx in range(len(test)):
+        '''
+        userids = test.index
+        rec_idx = random.randrange(len(userids)) 
+        '''
+        #select row by row number, either should work
+        #target = test[:rec_idx]
+        target = test.iloc[rec_idx]
+        uid = target.name
+        
+        #print "pick a random record from the test set, {}th record, uid={}".format(rec_idx, uid)
+        #print "start validation\n-------------------------" 
+        #print "result:"
+        #print target[target > 0].index.values
+         
+        
+        training_rec = training.ix[uid]
+        #print " prediction:"
+        #print training_rec[training_rec > 0].index.values
+        #print "----------------------- new instance---------"
+        
+        hit = 0
+        miss = 0
+        
+        actual_values = set(target[target > 0].index.values)
+        predicted_values = set(training_rec[training_rec > 0].index.values)
+
+        for i in actual_values:
+            if i in predicted_values:
+                hit += 1
+            else:
+                miss +=1
+                
+        # hit rate/recall = TP/P = TP((TP+FN), miss rate = FN/P
+        if hit + miss > 0:     
+            hit_rate = hit / (hit + miss)
+        else:
+            hit_rate = 0
+        scores.append(hit_rate)
+        
+        rec_idx += 1         
+
+    print ("average hit rate {:.2f}%").format(float(np.array(scores).sum())*100/len(scores))
+            
+            
+    
 if __name__ == '__main__':
     
-    prediction, p_items = content_based_prediction()
+    try:
+        train_user_activity, train_items_raw = load_data(train=True)
+        test_activity, test_item = load_data(train=False)
+    except:
+        print "load data error"
+        exit(0)
     
-    ''' 
-    
-    
-    p_userids = user_ids.tolist()
-    t_users = test_users.tolist()
+    prediction = content_based_prediction(train_user_activity, train_items_raw)
 
-  
-    while cnt < 10:
-        print 'userid: {}'.format(test_users[cnt])
-        if test_users[cnt] in user_ids:
-            
-            # user_ids is a Int64Index object, user_ids.values is a numpy.ndarray
-            p_index = p_userids.index(test_users[cnt])
-            p_rating = prediction[p_index]
-            t_rating = test_rating[cnt]
-            print precision_score(t_rating, p_rating)
-            
-            cnt +=1
-    '''
+    new_items = items_not_in_training_data(train_items_raw, test_item)
+    if new_items:    
+        print 'following items don\'t exist in training data {}'.format(new_items)
+        exit(1)
+        
+    test_rating = get_rating_matrix(test_activity)
+    
+    validate_test_training(test_rating, prediction)
+    
+    
+   
+
+
