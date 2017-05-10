@@ -5,16 +5,18 @@ Created on Apr 4, 2017
 '''
 import os
 import pandas
+import numpy as np
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.svm import LinearSVC, SVC
 from sklearn.datasets import load_files
-from sklearn.cross_validation import train_test_split
+from sklearn.model_selection import  train_test_split
 from sklearn.metrics import classification_report, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.pipeline import Pipeline
-from sklearn.grid_search import GridSearchCV
+from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 import time
+
 from sklearn.ensemble.forest import RandomForestClassifier
 
 vectorizer_list = [CountVectorizer(), TfidfVectorizer(min_df=5, max_df=0.8, sublinear_tf=True, use_idf=True)]
@@ -115,26 +117,40 @@ def evaluate_models_with_pipeline():
     '''
   
     steps = [('tfidf', TfidfVectorizer()), ('classifier', SVC())]
+    
     '''
-    params = [ 'tfidf':{'min_df':[5, 10, 20], 'max_df':[0.8, 0.9, 0.95]}, 
-              'classifier': {'kernel':['rbf', 'sublinear']}
-             ]
-    '''
-    scores = ['precision', 'recall']
+    Note: for pipeline, param grid formats: prepend estimator name: tfidf__, or classifier__ to parameter name 
+    to find the right syntax format, checkout the output of 'sorted(pipeline.get_params().keys())'
+    total 3x3x2 = 18 combinations, GridSearchCV will iterate through 18 sets of params and calculate their scroes. 
+    '''  
+    params = {
+              'tfidf__min_df': [5, 10, 20], 
+              'tfidf__max_df': [0.8, 0.9, 0.95],
+              'classifier__kernel': ['linear', 'rbf']
+             }
+        
+    
     train_data, test_data, train_target, test_target = load_data()
     pipeline = Pipeline(steps)
-    '''
-    pipeline.fit(train_data, train_target)
-    prediction = pipeline.predict(test_data)
-    report = classification_report(test_target, prediction)
-    print report
-    '''
-    clf = GridSearchCV(pipeline, cv=3, n_jobs=2, param_grid=params)
-    clf.fit(train_data, train_target)
-    mean_scores = np.array(clf.cv_results_['mean_test_scores'])
-    print mean_scores
+    
+    models = GridSearchCV(pipeline, cv=3, n_jobs=2, param_grid=params, refit=True)
+    # cv=3 3 folds cross validation for each estimator to get the scores. 
+    
+    tic = time.time()
+    print 'Start GridSearchCV against pipeline...'
+    models.fit(train_data, train_target)
+    mean_scores = np.array(models.cv_results_['mean_test_score'])
+    tok = time.time()
+    
+    print 'Time taken for Grid Search {:.0f} seconds'.format(tok - tic)
+    print 'mean score list: {}'.format(mean_scores)
+    
+    _,  best_params = sorted(zip(models.cv_results_['rank_test_score'], models.cv_results_['params']))[0] 
+    print 'the best parameters for classifier: {}'.format(best_params)
     
         
 if __name__ == '__main__':
+    # evaluate different classifier performance with different vectorizer
     evaluate_models()
-    #evaluate_models_with_pipeline()
+    #user GridSearchCV 
+    evaluate_models_with_pipeline()
