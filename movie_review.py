@@ -133,21 +133,31 @@ def evaluate_models_with_pipeline():
     train_data, test_data, train_target, test_target = load_data()
     pipeline = Pipeline(steps)
     
-    models = GridSearchCV(pipeline, cv=3, n_jobs=2, param_grid=params, refit=True)
+    grid_search = GridSearchCV(pipeline, cv=3, n_jobs=2, param_grid=params, refit=True)
     # cv=3 3 folds cross validation for each estimator to get the scores. 
     
     tic = time.time()
     print 'Start GridSearchCV against pipeline...'
-    models.fit(train_data, train_target)
-    mean_scores = np.array(models.cv_results_['mean_test_score'])
+    grid_search.fit(train_data, train_target)
+    mean_scores = np.array(grid_search.cv_results_['mean_test_score'])
     tok = time.time()
     
     print 'Time taken for Grid Search {:.0f} seconds'.format(tok - tic)
     print 'mean score list: {}'.format(mean_scores)
     
-    _,  best_params = sorted(zip(models.cv_results_['rank_test_score'], models.cv_results_['params']))[0] 
-    print 'the best parameters for classifier: {}'.format(best_params)
+    print 'Best score is {}'.format(grid_search.best_score_)
     
+    gs_result = grid_search.cv_results_ 
+    _,  best_params = sorted(zip(gs_result['rank_test_score'], gs_result['params']))[0]
+    print 'the best parameters:'
+    for k in best_params.keys():
+        print '{:>20}: {:>10}'.format(k, best_params[k]) 
+    
+    
+    best_params = grid_search.best_estimator_.get_params() 
+   
+    for p_name in sorted(params.keys()):
+        print '{:>20}: {:>10}'.format(p_name, best_params[p_name])
         
 if __name__ == '__main__':
     # evaluate different classifier performance with different vectorizer
